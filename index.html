@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dairy POS - Type Qty</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .tap-scale:active { transform: scale(0.98); }
+        /* Removes arrows from number input for cleaner UI */
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans antialiased" x-data="dairyApp()" x-init="init()">
+
+    <template x-if="!isLoggedIn">
+        <div class="fixed inset-0 bg-green-800 flex items-center justify-center p-6 z-[100]">
+            <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8">
+                <h1 class="text-2xl font-bold text-center text-green-800 mb-6">Dealer Login</h1>
+                <div class="space-y-4">
+                    <input type="text" x-model="loginData.name" placeholder="Dealer Name" class="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-green-500">
+                    <input type="password" inputmode="numeric" x-model="loginData.pin" placeholder="PIN" class="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-green-500">
+                    <button @click="login()" class="w-full bg-green-600 text-white font-bold py-4 rounded-2xl shadow-lg tap-scale">Open Dashboard</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="isLoggedIn">
+        <div class="min-h-screen flex flex-col">
+            <header class="bg-white border-b sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-sm">
+                <div>
+                    <h2 class="font-bold text-green-700 leading-none" x-text="dealerName"></h2>
+                    <span class="text-[10px] text-gray-400 font-bold" x-text="currentDate"></span>
+                </div>
+                <div class="flex bg-gray-100 rounded-xl p-1">
+                    <button @click="view = 'billing'" :class="view === 'billing' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'" class="px-4 py-2 rounded-lg text-sm font-bold transition">Billing</button>
+                    <button @click="view = 'reports'" :class="view === 'reports' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'" class="px-4 py-2 rounded-lg text-sm font-bold transition">Reports</button>
+                    <button @click="logout()" class="ml-2 text-red-500 p-2">✕</button>
+                </div>
+            </header>
+
+            <main x-show="view === 'billing'" class="flex-1 p-4 space-y-6 pb-60">
+                <template x-for="(items, category) in products" :key="category">
+                    <section>
+                        <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest mb-3" x-text="category"></h3>
+                        <div class="space-y-3">
+                            <template x-for="item in items" :key="item.id">
+                                <div class="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between border border-gray-100">
+                                    <div class="flex-1">
+                                        <p class="font-bold text-gray-800" x-text="item.name"></p>
+                                        <p class="text-xs text-gray-500" x-text="item.size + ' • ₹' + item.price"></p>
+                                    </div>
+                                    
+                                    <div class="flex items-center gap-2">
+                                        <button @click="adjust(item.id, -1)" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full font-bold text-gray-600">-</button>
+                                        <input type="number" 
+                                               inputmode="numeric"
+                                               x-model.number="quantities[item.id]" 
+                                               placeholder="0"
+                                               class="w-14 h-10 text-center bg-gray-50 border border-gray-200 rounded-lg font-bold text-green-700 focus:border-green-500 outline-none">
+                                        <button @click="adjust(item.id, 1)" class="w-8 h-8 flex items-center justify-center bg-green-100 rounded-full font-bold text-green-700">+</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </section>
+                </template>
+            </main>
+
+            <main x-show="view === 'reports'" class="flex-1 p-4 pb-10" x-cloak>
+                <div class="bg-green-600 text-white p-6 rounded-3xl mb-6 shadow-lg">
+                    <p class="text-green-100 text-sm font-bold">Today's Total Sales</p>
+                    <h2 class="text-4xl font-black" x-text="'₹' + todayTotal"></h2>
+                </div>
+
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-gray-600">Recent Sales</h3>
+                    <button @click="exportCSV()" class="text-blue-600 text-sm font-bold">Export All (CSV)</button>
+                </div>
+
+                <div class="space-y-3">
+                    <template x-for="sale in salesLog" :key="sale.id">
+                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-50">
+                            <div class="flex justify-between items-start mb-1">
+                                <span class="text-xs font-bold text-gray-400" x-text="sale.timestamp"></span>
+                                <span class="font-black text-green-600" x-text="'₹' + sale.total"></span>
+                            </div>
+                            <p class="text-[11px] text-gray-600 italic" x-text="sale.summary"></p>
+                        </div>
+                    </template>
+                </div>
+            </main>
+
+            <div x-show="cartTotal > 0 && view === 'billing'" class="fixed bottom-0 inset-x-0 bg-white border-t p-6 shadow-2xl rounded-t-[2.5rem]">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <span class="text-gray-400 text-[10px] font-black uppercase tracking-widest">Grand Total</span>
+                        <div class="text-3xl font-black text-gray-900" x-text="'₹' + cartTotal"></div>
+                    </div>
+                    <button @click="quantities = {}" class="text-red-500 font-bold text-sm">Reset</button>
+                </div>
+                <button @click="checkout()" class="w-full bg-green-700 text-white py-5 rounded-2xl font-black text-xl shadow-xl tap-scale transition-all">
+                    SAVE TRANSACTION
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        function dairyApp() {
+            return {
+                isLoggedIn: false,
+                dealerName: '',
+                view: 'billing',
+                currentDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                loginData: { name: '', pin: '' },
+                quantities: {}, 
+                salesLog: [],
+
+                products: {
+                    'FCM Milk': [
+                        { id: 1, name: 'FCM Milk', size: '1000ml', price: 69 },
+                        { id: 2, name: 'FCM Milk', size: '500ml', price: 36.5 },
+                        { id: 3, name: 'FCM Milk', size: '180ml', price: 13.5 },
+                        { id: 4, name: 'FCM Milk', size: '110ml', price: 9 },
+                    ],
+                    'Arokya Curd': [
+                        { id: 5, name: 'Arokya Curd', size: '400ml', price: 30 },
+                        { id: 6, name: 'Arokya Curd', size: '110ml', price: 8.5 },
+                    ],
+                    'Hatsun Curd': [
+                        { id: 7, name: 'Hatsun Curd', size: '500ml', price: 36 },
+                        { id: 8, name: 'Hatsun Curd', size: '400ml', price: 30 },
+                        { id: 9, name: 'Hatsun Curd', size: '110ml', price: 8.5 },
+                    ],
+                    'Cup Curd': [
+                        { id: 10, name: 'Cup Curd', size: '200g', price: 20 },
+                        { id: 11, name: 'Cup Curd', size: '85g', price: 8.5 },
+                    ],
+                    'Paneer': [
+                        { id: 12, name: 'Arokya Paneer', size: 'Unit', price: 92 },
+                        { id: 13, name: 'Hatsun Paneer', size: 'Unit', price: 102 },
+                    ]
+                },
+
+                init() {
+                    const savedSales = localStorage.getItem('dairy_sales_v3');
+                    if (savedSales) this.salesLog = JSON.parse(savedSales);
+                    
+                    const sessionUser = localStorage.getItem('dairy_session_user');
+                    if (sessionUser) {
+                        this.dealerName = sessionUser;
+                        this.isLoggedIn = true;
+                    }
+                },
+
+                login() {
+                    if (this.loginData.name && this.loginData.pin) {
+                        this.dealerName = this.loginData.name;
+                        this.isLoggedIn = true;
+                        localStorage.setItem('dairy_session_user', this.dealerName);
+                    }
+                },
+
+                logout() {
+                    this.isLoggedIn = false;
+                    localStorage.removeItem('dairy_session_user');
+                },
+
+                adjust(id, change) {
+                    let val = (this.quantities[id] || 0) + change;
+                    this.quantities[id] = val < 0 ? 0 : val;
+                },
+
+                get cartTotal() {
+                    let total = 0;
+                    Object.values(this.products).flat().forEach(p => {
+                        let q = this.quantities[p.id] || 0;
+                        total += (p.price * q);
+                    });
+                    return total.toFixed(2);
+                },
+
+                get todayTotal() {
+                    const today = new Date().toLocaleDateString();
+                    return this.salesLog
+                        .filter(s => new Date(s.timestamp).toLocaleDateString() === today)
+                        .reduce((sum, s) => sum + parseFloat(s.total), 0).toFixed(2);
+                },
+
+                checkout() {
+                    let items = [];
+                    Object.values(this.products).flat().forEach(p => {
+                        let q = this.quantities[p.id] || 0;
+                        if (q > 0) items.push(`${q}x ${p.name}(${p.size})`);
+                    });
+
+                    const newSale = {
+                        id: Date.now(),
+                        timestamp: new Date().toLocaleString(),
+                        dealer: this.dealerName,
+                        total: this.cartTotal,
+                        summary: items.join(', ')
+                    };
+
+                    this.salesLog.unshift(newSale);
+                    localStorage.setItem('dairy_sales_v3', JSON.stringify(this.salesLog));
+                    this.quantities = {};
+                    alert('Sale Saved Successfully!');
+                },
+
+                exportCSV() {
+                    let csv = "Timestamp,Dealer,Total Amount,Items Sold\n";
+                    this.salesLog.forEach(s => {
+                        csv += `"${s.timestamp}","${s.dealer}","${s.total}","${s.summary}"\n`;
+                    });
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Dairy_Report_${new Date().toLocaleDateString()}.csv`;
+                    a.click();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
