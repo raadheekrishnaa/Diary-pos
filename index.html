@@ -3,183 +3,504 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Dairy POS Cloud</title>
+    <title>S.N.S Agency - Pro POS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         [x-cloak] { display: none !important; }
-        .tap-scale:active { transform: scale(0.98); }
-        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .active-tab { background: white; color: #166534; font-weight: 800; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-900 font-sans" x-data="dairyApp()" x-init="init()">
+<body class="bg-gray-100 text-gray-900" x-data="dairyApp()" x-init="init()">
+
+    <template x-if="showQRModal">
+        <div class="fixed inset-0 bg-black/95 z-[400] flex items-center justify-center p-6" @click="confirmSale('UPI/CARD'); showQRModal = false">
+            <div class="bg-white p-4 rounded-3xl text-center">
+                <p class="font-black text-sm mb-4 uppercase">Scan to Pay</p>
+                <img :src="qrImageUrl || 'https://placehold.co/400?text=No+QR+Set'" alt="UPI QR" class="w-64 h-64 mx-auto rounded-xl shadow-lg object-contain bg-gray-50">
+                <p class="mt-4 text-[10px] font-bold text-gray-500 uppercase">Tap anywhere to complete sale</p>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="showBill">
+        <div class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl">
+                <div id="pdf-area" class="bg-white p-6 font-mono text-[10px] leading-tight">
+                    <div class="text-center border-b-2 border-black pb-2 mb-2">
+                        <h2 class="text-lg font-black uppercase">S.N.S Agency</h2>
+                    </div>
+                    <div class="flex justify-between uppercase font-bold text-[9px] mb-2">
+                        <span x-text="currentBill.timestamp"></span>
+                        <span x-text="'Mode: ' + currentBill.payment"></span>
+                    </div>
+                    <p class="font-bold mb-1 uppercase text-xs">SHOP: <span x-text="currentBill.targetShop"></span></p>
+                    <div class="border-y border-dashed border-gray-400 py-2 my-2">
+                        <template x-for="line in currentBill.summary.split('\n')">
+                            <p x-text="line" class="mb-1"></p>
+                        </template>
+                    </div>
+                    <div class="flex justify-between text-sm font-black">
+                        <span>TOTAL:</span>
+                        <span x-text="'₹' + currentBill.total"></span>
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50 flex gap-2">
+                    <button @click="shareWhatsApp()" class="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold uppercase text-xs">WhatsApp</button>
+                    <button @click="showBill = false" class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-xl font-bold text-xs uppercase">Close</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="showPaymentModal">
+        <div class="fixed inset-0 bg-black/80 z-[300] flex items-center justify-center p-6">
+            <div class="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl">
+                <h3 class="text-xl font-black text-center mb-6 uppercase text-gray-800">Payment</h3>
+                <div class="space-y-3">
+                    <button @click="confirmSale('CASH')" class="w-full bg-green-100 text-green-700 py-4 rounded-2xl font-black uppercase">1. Cash</button>
+                    <button @click="showQRModal = true; showPaymentModal = false" class="w-full bg-blue-100 text-blue-700 py-4 rounded-2xl font-black uppercase">2. UPI / Card</button>
+                    <button @click="confirmSale('DUE')" class="w-full bg-red-100 text-red-700 py-4 rounded-2xl font-black uppercase">3. Due (Credit)</button>
+                </div>
+                <button @click="showPaymentModal = false" class="w-full mt-4 text-gray-400 font-bold uppercase text-xs">Cancel</button>
+            </div>
+        </div>
+    </template>
 
     <template x-if="!isLoggedIn">
-        <div class="fixed inset-0 bg-green-900 flex items-center justify-center p-6 z-[100]">
-            <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8">
-                <h1 class="text-2xl font-bold text-center text-green-800 mb-6">Dairy Login</h1>
-                <div class="space-y-4">
-                    <input type="text" x-model="loginData.name" placeholder="Dealer Name" class="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-green-500">
-                    <input type="password" inputmode="numeric" x-model="loginData.pin" placeholder="PIN (Admin: 9999)" class="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-green-500">
-                    <button @click="login()" class="w-full bg-green-600 text-white font-bold py-4 rounded-2xl shadow-lg tap-scale">Start Billing</button>
-                </div>
+        <div class="fixed inset-0 bg-green-800 flex items-center justify-center p-6 z-[100]">
+            <div class="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl text-center">
+                <h1 class="text-2xl font-black text-green-800 mb-6 uppercase tracking-widest">S.N.S</h1>
+                <input type="text" x-model="loginData.id" placeholder="User ID" class="w-full border-2 p-4 rounded-2xl mb-4 outline-none">
+                <input type="password" inputmode="numeric" x-model="loginData.pin" placeholder="PIN" class="w-full border-2 p-4 rounded-2xl mb-6 outline-none">
+                <button @click="login()" class="w-full bg-green-600 text-white font-black py-4 rounded-2xl shadow-lg">LOGIN</button>
             </div>
         </div>
     </template>
 
     <template x-if="isLoggedIn">
         <div class="min-h-screen flex flex-col">
-            <header class="bg-white border-b sticky top-0 z-40 px-4 py-3 flex justify-between items-center shadow-sm">
-                <div>
-                    <h2 class="font-bold text-green-700 leading-none" x-text="dealerName + (isAdmin ? ' (Admin)' : '')"></h2>
-                    <span class="text-[10px] text-gray-400 font-bold" x-text="currentDate"></span>
+            <header class="bg-white border-b sticky top-0 z-50 p-3 flex flex-col gap-2">
+                <div class="flex justify-between items-center px-1">
+                    <h2 class="font-black text-green-700 text-lg uppercase tracking-tighter">S.N.S Agency</h2>
+                    <button @click="logout()" class="text-red-500 font-bold text-[10px] uppercase border px-2 py-1 rounded-lg">Logout</button>
                 </div>
-                <div class="flex bg-gray-100 rounded-xl p-1">
-                    <button @click="view = 'billing'" :class="view === 'billing' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'" class="px-4 py-2 rounded-lg text-sm font-bold transition">Billing</button>
-                    <button @click="view = 'reports'" :class="view === 'reports' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500'" class="px-4 py-2 rounded-lg text-sm font-bold transition">Reports</button>
-                    <button @click="logout()" class="ml-2 text-red-500 p-2">✕</button>
-                </div>
+                <nav class="flex bg-gray-100 p-1 rounded-xl gap-1 overflow-x-auto no-scrollbar">
+                    <button @click="view = 'billing'" :class="view === 'billing' ? 'active-tab' : 'text-gray-500'" class="flex-1 px-3 py-2 rounded-lg text-[10px] uppercase font-black whitespace-nowrap">POS</button>
+                    <button x-show="isAdmin" @click="view = 'stock'" :class="view === 'stock' ? 'active-tab' : 'text-gray-500'" class="flex-1 px-3 py-2 rounded-lg text-[10px] uppercase font-black whitespace-nowrap text-purple-700">Stock</button>
+                    <button @click="view = 'reports'" :class="view === 'reports' ? 'active-tab' : 'text-gray-500'" class="flex-1 px-3 py-2 rounded-lg text-[10px] uppercase font-black whitespace-nowrap">Sales</button>
+                    <button x-show="isAdmin" @click="view = 'analysis'" :class="view === 'analysis' ? 'active-tab' : 'text-gray-500'" class="flex-1 px-3 py-2 rounded-lg text-[10px] uppercase font-black whitespace-nowrap">Analysis</button>
+                    <button x-show="isAdmin" @click="view = 'settings'" :class="view === 'settings' ? 'active-tab' : 'text-gray-500'" class="flex-1 px-3 py-2 rounded-lg text-[10px] uppercase font-black whitespace-nowrap">Admin</button>
+                </nav>
             </header>
 
-            <main x-show="view === 'billing'" class="flex-1 p-4 space-y-6 pb-60">
-                <template x-for="(items, category) in products" :key="category">
-                    <section>
-                        <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 border-l-4 border-green-500 pl-2" x-text="category"></h3>
-                        <div class="space-y-3">
-                            <template x-for="item in items" :key="item.id">
-                                <div class="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between border border-gray-100">
-                                    <div class="flex-1">
-                                        <p class="font-bold text-gray-800 text-sm" x-text="item.name"></p>
-                                        <p class="text-[10px] text-gray-500" x-text="item.size + ' • ₹' + item.price"></p>
+            <main x-show="view === 'billing'" class="p-4 pb-64">
+                <template x-for="cat in sortedCategories" :key="cat.id">
+                    <div class="mb-6">
+                        <h3 class="text-[10px] font-black text-gray-400 uppercase mb-3 px-1" x-text="cat.name"></h3>
+                        <div class="grid gap-3">
+                            <template x-for="item in products.filter(i => i.category === cat.name)" :key="item.id">
+                                <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                    <div class="flex-1 pr-2">
+                                        <p class="font-bold text-sm" x-text="item.name"></p>
+                                        <p class="text-[10px] font-black text-green-600" x-text="'₹' + item.price"></p>
+                                        <span :class="(item.stock || 0) <= 0 ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'" 
+                                              class="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase mt-1 inline-block" 
+                                              x-text="(item.stock || 0) <= 0 ? 'No Stock' : 'Avl: ' + (item.stock || 0)"></span>
                                     </div>
-                                    <div class="flex items-center gap-2">
-                                        <button @click="adjust(item.id, -1)" class="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full font-bold text-gray-600">-</button>
-                                        <input type="number" x-model.number="quantities[item.id]" placeholder="0" class="w-12 h-10 text-center bg-gray-50 border rounded-lg font-bold text-green-700 outline-none">
-                                        <button @click="adjust(item.id, 1)" class="w-8 h-8 flex items-center justify-center bg-green-100 rounded-full font-bold text-green-700">+</button>
+                                    <div class="flex items-center gap-2 bg-gray-100 p-1 rounded-xl">
+                                        <button @click="adjust(item.id, -1)" class="w-8 h-8 bg-white rounded-lg shadow-sm font-bold">-</button>
+                                        <input type="number" 
+                                               x-model.number="quantities[item.id]" 
+                                               @input="if(quantities[item.id] > (item.stock || 0)) quantities[item.id] = (item.stock || 0)"
+                                               class="w-12 text-center bg-transparent font-black text-sm outline-none" 
+                                               placeholder="0">
+                                        <button @click="adjust(item.id, 1)" 
+                                                :disabled="(item.stock || 0) <= (quantities[item.id] || 0)"
+                                                class="w-8 h-8 rounded-lg shadow-sm font-bold bg-green-600 text-white disabled:opacity-20">+</button>
                                     </div>
                                 </div>
                             </template>
                         </div>
-                    </section>
+                    </div>
                 </template>
             </main>
 
-            <main x-show="view === 'reports'" class="flex-1 p-4 pb-10" x-cloak>
-                <div class="bg-green-700 text-white p-6 rounded-3xl mb-6 shadow-lg">
-                    <p class="text-green-100 text-sm font-bold">Cloud Total (All Dealers)</p>
-                    <h2 class="text-4xl font-black" x-text="'₹' + globalTotal"></h2>
-                </div>
-
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="font-bold text-gray-600">Global Sales History</h3>
-                    <template x-if="isAdmin">
-                        <button @click="clearCloud()" class="bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-lg">WIPE CLOUD</button>
-                    </template>
-                </div>
-
-                <div class="space-y-3">
-                    <template x-for="sale in salesLog" :key="sale.id">
-                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-50">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <span class="text-[10px] font-bold text-white bg-green-500 px-2 py-0.5 rounded-full uppercase" x-text="sale.dealer"></span>
-                                    <p class="text-[10px] text-gray-400 mt-1" x-text="sale.timestamp"></p>
-                                </div>
-                                <span class="font-black text-green-600 text-lg" x-text="'₹' + sale.total"></span>
-                            </div>
-                            <p class="text-[11px] text-gray-500 mt-2 p-2 bg-gray-50 rounded-lg" x-text="sale.summary"></p>
+            <main x-show="view === 'stock'" class="p-4 space-y-4">
+                <template x-for="p in products" :key="'stk-scr-'+p.id">
+                    <div class="bg-white p-4 rounded-2xl border flex items-center justify-between">
+                        <div class="flex-1">
+                            <p class="font-black text-xs uppercase" x-text="p.name"></p>
+                            <p class="text-[9px] text-gray-400" x-text="p.category"></p>
                         </div>
-                    </template>
+                        <div class="flex items-center gap-2">
+                            <div class="flex items-center bg-gray-100 rounded-xl p-1">
+                                <button @click="p.stock = Math.max(0, (parseInt(p.stock) || 0) - 1)" class="w-8 h-8 bg-white rounded-lg font-bold">-</button>
+                                <input type="number" x-model.number="p.stock" class="w-12 text-center bg-transparent font-black text-xs outline-none">
+                                <button @click="p.stock = (parseInt(p.stock) || 0) + 1" class="w-8 h-8 bg-white rounded-lg font-bold">+</button>
+                            </div>
+                            <button @click="updateStock(p.id, p.stock)" class="bg-purple-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase">Save</button>
+                        </div>
+                    </div>
+                </template>
+            </main>
+
+            <main x-show="view === 'reports'" class="p-4 space-y-3">
+                <template x-for="sale in filteredSales" :key="sale.timestamp">
+                    <div class="bg-white p-4 rounded-2xl border shadow-sm">
+                        <div class="flex justify-between font-black text-xs uppercase mb-1">
+                            <span x-text="sale.targetShop"></span>
+                            <span x-text="'₹' + sale.total"></span>
+                        </div>
+                        <p class="text-[9px] text-gray-400 font-mono" x-text="sale.summary"></p>
+                        <div class="flex justify-between mt-2 pt-2 border-t text-[8px] font-bold uppercase">
+                            <span x-text="sale.timestamp"></span>
+                            <span x-text="sale.payment + ' | ' + sale.dealer"></span>
+                        </div>
+                    </div>
+                </template>
+            </main>
+
+            <main x-show="view === 'analysis'" class="p-4 space-y-6">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-white p-4 rounded-2xl border shadow-sm"><p class="text-[10px] font-bold text-gray-400">CASH</p><p class="text-lg font-black" x-text="'₹' + calculateModeTotal('CASH')"></p></div>
+                    <div class="bg-white p-4 rounded-2xl border shadow-sm"><p class="text-[10px] font-bold text-gray-400">UPI/CARD</p><p class="text-lg font-black" x-text="'₹' + calculateModeTotal('UPI/CARD')"></p></div>
+                    <div class="bg-white p-4 rounded-2xl border shadow-sm"><p class="text-[10px] font-bold text-gray-400">DUE</p><p class="text-lg font-black" x-text="'₹' + calculateModeTotal('DUE')"></p></div>
+                    <div class="bg-gray-800 p-4 rounded-2xl shadow-sm"><p class="text-[10px] font-bold text-gray-400">TOTAL</p><p class="text-lg font-black text-white" x-text="'₹' + reportTotal"></p></div>
+                </div>
+                <div x-show="isAdmin" class="mt-8">
+                    <button @click="wipeSales()" class="w-full bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-lg active:bg-red-700">Wipe Sales History</button>
+                    <p class="text-[8px] text-center text-red-500 font-bold mt-2 uppercase">Warning: This deletes all transaction records!</p>
                 </div>
             </main>
 
-            <div x-show="cartTotal > 0 && view === 'billing'" class="fixed bottom-0 inset-x-0 bg-white border-t p-6 shadow-2xl rounded-t-[2.5rem]">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-3xl font-black text-gray-900" x-text="'₹' + cartTotal"></span>
-                    <button @click="quantities = {}" class="text-red-500 font-bold text-sm">Cancel</button>
+            <main x-show="view === 'settings'" class="p-4 space-y-8 pb-32">
+                
+                <div class="bg-white p-6 rounded-3xl border-4 border-dashed border-blue-200 shadow-sm">
+                    <h3 class="font-black text-xs mb-4 uppercase text-blue-700">UPI QR Code Management</h3>
+                    <div class="flex items-center gap-4 mb-4">
+                        <img :src="qrImageUrl || 'https://placehold.co/100?text=No+QR'" class="w-16 h-16 rounded border bg-gray-50 object-contain">
+                        <div class="flex-1">
+                           <input type="file" @change="uploadQR" class="hidden" id="qr-input" accept="image/*">
+                           <label for="qr-input" class="inline-block bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase cursor-pointer">
+                               Upload New QR
+                           </label>
+                           <p class="text-[8px] text-gray-400 mt-1">Changes reflect instantly for all users.</p>
+                        </div>
+                    </div>
                 </div>
-                <button @click="saveToCloud()" class="w-full bg-green-700 text-white py-4 rounded-2xl font-black text-xl shadow-xl tap-scale transition-all">
-                    SYNC TO CLOUD
+
+                <div class="bg-white p-6 rounded-3xl border shadow-sm">
+                    <h3 class="font-black text-xs mb-4 uppercase text-blue-600" x-text="editingProductId ? 'Edit Product' : 'Product Management'"></h3>
+                    <div class="space-y-3 mb-6">
+                        <input type="text" x-model="newP.name" placeholder="New Product Name" class="w-full border p-3 rounded-xl text-xs outline-none">
+                        <div class="flex gap-2">
+                            <input type="number" x-model.number="newP.price" placeholder="Price" class="w-1/2 border p-3 rounded-xl text-xs outline-none">
+                            <input type="number" x-model.number="newP.stock" placeholder="Initial Stock" class="w-1/2 border p-3 rounded-xl text-xs outline-none">
+                        </div>
+                        <select x-model="newP.category" class="w-full border p-3 rounded-xl text-xs bg-gray-50 outline-none">
+                            <option value="">-- Select Category --</option>
+                            <template x-for="cat in sortedCategories">
+                                <option :value="cat.name" x-text="cat.name"></option>
+                            </template>
+                        </select>
+                        <div class="flex gap-2">
+                            <button @click="addProduct()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black text-xs uppercase" x-text="editingProductId ? 'Update' : 'Add Product'"></button>
+                            <button x-show="editingProductId" @click="cancelEdit()" class="bg-gray-200 text-gray-600 px-4 py-3 rounded-xl font-black text-xs uppercase">Cancel</button>
+                        </div>
+                    </div>
+                    <hr class="mb-4">
+                    <div class="space-y-2">
+                        <template x-for="(p, index) in products" :key="'mng-'+p.id">
+                            <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                                <div class="truncate">
+                                    <p class="text-[9px] font-black uppercase" x-text="p.name"></p>
+                                    <p class="text-[8px] text-gray-400 font-bold uppercase" x-text="'₹' + p.price + ' | ' + p.category"></p>
+                                </div>
+                                <div class="flex gap-1">
+                                    <button @click="editProduct(p)" class="p-1 border bg-white rounded text-[8px] text-blue-600">Edit</button>
+                                    <button @click="moveProduct(index, -1)" class="p-1 border bg-white rounded text-[8px]">↑</button>
+                                    <button @click="moveProduct(index, 1)" class="p-1 border bg-white rounded text-[8px]">↓</button>
+                                    <button @click="removeProduct(p.id)" class="text-red-500 font-black ml-1 p-1">×</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-3xl border shadow-sm">
+                    <h3 class="font-black text-xs mb-4 uppercase">Category Management</h3>
+                    <div class="flex gap-2 mb-4">
+                        <input type="text" x-model="newCatName" placeholder="Category Name" class="flex-1 border p-2 rounded-xl text-xs">
+                        <button @click="addCategory()" class="bg-teal-600 text-white px-4 rounded-xl text-xs font-black">Add</button>
+                    </div>
+                    <div class="space-y-2">
+                        <template x-for="(cat, index) in sortedCategories" :key="cat.id">
+                            <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                                <span class="text-[10px] font-black uppercase" x-text="cat.name"></span>
+                                <div class="flex gap-2">
+                                    <button @click="moveCat(index, -1)" class="p-1 border bg-white rounded text-[8px]">↑</button>
+                                    <button @click="moveCat(index, 1)" class="p-1 border bg-white rounded text-[8px]">↓</button>
+                                    <button @click="deleteCategory(cat.id)" class="text-red-500 font-black p-1">×</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-3xl border shadow-sm">
+                    <h3 class="font-black text-xs mb-4 uppercase text-purple-600">User Management</h3>
+                    <div class="flex gap-2 mb-4">
+                        <input type="text" x-model="newUser.id" placeholder="ID" class="w-1/4 border p-2 rounded-xl text-xs">
+                        <input type="text" x-model="newUser.name" placeholder="Name" class="w-1/2 border p-2 rounded-xl text-xs">
+                        <input type="text" x-model="newUser.pin" placeholder="PIN" class="w-1/4 border p-2 rounded-xl text-xs">
+                    </div>
+                    <button @click="saveUser()" class="w-full bg-purple-600 text-white py-2 rounded-xl font-black text-xs mb-4">Add User</button>
+                    <div class="space-y-2">
+                        <template x-for="u in Object.entries(userMap)">
+                            <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                                <span class="text-[10px] font-bold uppercase" x-text="u[1].name + ' (' + u[0] + ')'"></span>
+                                <button @click="deleteUser(u[0])" class="text-red-500 font-black px-2">×</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-3xl border shadow-sm">
+                    <h3 class="font-black text-xs mb-4 uppercase text-green-600">Shop Management</h3>
+                    <div class="flex gap-2 mb-4">
+                        <input type="text" x-model="newShopName" placeholder="Shop Name" class="flex-1 border p-2 rounded-xl text-xs">
+                        <button @click="addShop()" class="bg-green-600 text-white px-4 rounded-xl text-xs font-black" x-text="editingShopId ? 'Update' : 'Add'"></button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <template x-for="(shop, id) in shopMap">
+                            <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                                <span class="text-[9px] font-bold uppercase truncate" x-text="shop.name"></span>
+                                <div class="flex gap-1">
+                                    <button @click="editShop(id, shop)" class="text-blue-600 text-[8px] font-bold p-1">Edit</button>
+                                    <button @click="deleteShop(id)" class="text-red-500 font-black ml-1">×</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </main>
+
+            <div x-show="cartTotal > 0 && view === 'billing'" class="fixed bottom-0 inset-x-0 bg-white p-6 shadow-2xl border-t rounded-t-[2.5rem] z-50">
+                <select x-model="selectedShop" class="w-full border-2 p-4 rounded-2xl text-xs mb-4 font-black bg-gray-50 uppercase text-center outline-none">
+                    <option value="">-- SELECT SHOP --</option>
+                    <template x-for="(shop, id) in shopMap">
+                        <option :value="shop.name" x-text="shop.name"></option>
+                    </template>
+                </select>
+                <button @click="showPaymentModal = true" :disabled="!selectedShop" :class="selectedShop ? 'bg-green-700' : 'bg-gray-300'" class="w-full text-white py-5 rounded-2xl font-black text-xl shadow-xl uppercase">
+                    Checkout (₹<span x-text="cartTotal"></span>)
                 </button>
             </div>
         </div>
     </template>
 
     <script>
-        const DATABASE_URL = "https://diary-pis-default-rtdb.asia-southeast1.firebasedatabase.app/"; 
-
+        const DATABASE_URL = "https://diary-pis-default-rtdb.asia-southeast1.firebasedatabase.app/";
         function dairyApp() {
             return {
-                isLoggedIn: false, isAdmin: false, dealerName: '', view: 'billing',
-                currentDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-                loginData: { name: '', pin: '' }, quantities: {}, salesLog: [],
-                products: {
-                    'FCM Milk': [{id:1,name:'FCM 1000ml',size:'1L',price:69},{id:2,name:'FCM 500ml',size:'500ml',price:36.5},{id:3,name:'FCM 180ml',size:'180ml',price:13.5},{id:4,name:'FCM 110ml',size:'110ml',price:9}],
-                    'Arokya Curd': [{id:5,name:'Arokya 400ml',size:'400ml',price:30},{id:6,name:'Arokya 110ml',size:'110ml',price:8.5}],
-                    'Hatsun Curd': [{id:7,name:'Hatsun 500ml',size:'500ml',price:36},{id:8,name:'Hatsun 400ml',size:'400ml',price:30},{id:9,name:'Hatsun 110ml',size:'110ml',price:8.5}],
-                    'Cup Curd': [{id:10,name:'Cup 200g',size:'200g',price:20},{id:11,name:'Cup 85g',size:'85g',price:8.5}],
-                    'Paneer': [{id:12,name:'Arokya Paneer',size:'Unit',price:92},{id:13,name:'Hatsun Paneer',size:'Unit',price:102}]
+                isLoggedIn: false, isAdmin: false, view: 'billing', showBill: false, showPaymentModal: false, showQRModal: false,
+                loginData: { id: '', pin: '' }, currentUser: { id: '', name: '' },
+                newP: { name: '', price: '', category: '', order: 0, stock: 0 },
+                newUser: { id: '', name: '', pin: '' }, newShopName: '', newCatName: '',
+                productMap: {}, userMap: {}, shopMap: {}, categoryMap: {}, salesLog: [], quantities: {},
+                selectedShop: '', currentBill: {}, qrImageUrl: '',
+                editingProductId: null, editingShopId: null,
+
+                async init() { 
+                    await this.fetchAll(); 
+                    setInterval(() => { if(this.isLoggedIn) this.fetchAll(); }, 15000); 
                 },
-                init() {
-                    const user = localStorage.getItem('dairy_user');
-                    if (user) { this.dealerName = user; this.isLoggedIn = true; this.isAdmin = (user === 'Admin'); }
-                    this.fetchSales();
-                    setInterval(() => this.fetchSales(), 15000); 
+
+                async fetchAll() {
+                    try {
+                        const [p, u, s, sl, c, qr] = await Promise.all([
+                            fetch(`${DATABASE_URL}/products.json`).then(r => r.json()),
+                            fetch(`${DATABASE_URL}/users.json`).then(r => r.json()),
+                            fetch(`${DATABASE_URL}/shops.json`).then(r => r.json()),
+                            fetch(`${DATABASE_URL}/sales.json`).then(r => r.json()),
+                            fetch(`${DATABASE_URL}/categories.json`).then(r => r.json()),
+                            fetch(`${DATABASE_URL}/globalConfig/qrUrl.json`).then(r => r.json())
+                        ]);
+                        this.productMap = p || {}; this.userMap = u || {}; this.shopMap = s || {}; 
+                        this.categoryMap = c || {}; this.salesLog = sl ? Object.values(sl).reverse() : [];
+                        this.qrImageUrl = qr || '';
+                    } catch(e) { console.error(e); }
                 },
+
+                get products() { 
+                    return Object.entries(this.productMap).map(([id, p]) => ({ id, ...p })).sort((a,b) => (a.order || 0) - (b.order || 0)); 
+                },
+                get sortedCategories() { 
+                    return Object.entries(this.categoryMap).map(([id, c]) => ({ id, ...c })).sort((a,b) => (a.order || 0) - (b.order || 0)); 
+                },
+                get cartTotal() { 
+                    return this.products.reduce((t, p) => t + (parseFloat(p.price) * (this.quantities[p.id] || 0)), 0).toFixed(2); 
+                },
+                get reportTotal() { 
+                    return this.filteredSales.reduce((sum, s) => sum + parseFloat(s.total), 0).toFixed(2); 
+                },
+                get filteredSales() { 
+                    return this.isAdmin ? this.salesLog : this.salesLog.filter(s => s.userId === this.currentUser.id); 
+                },
+
+                calculateModeTotal(mode) {
+                    return this.filteredSales.filter(s => s.payment === mode).reduce((sum, s) => sum + parseFloat(s.total), 0).toFixed(2);
+                },
+
                 login() {
-                    if (this.loginData.name.toLowerCase() === 'admin' && this.loginData.pin === '9999') {
-                        this.isAdmin = true; this.dealerName = 'Admin';
-                    } else {
-                        this.dealerName = this.loginData.name;
-                        this.isAdmin = false;
-                    }
-                    if (this.dealerName) {
-                        this.isLoggedIn = true;
-                        localStorage.setItem('dairy_user', this.dealerName);
-                    }
+                    if (this.loginData.id === 'admin' && this.loginData.pin === '9999') {
+                        this.isAdmin = true; this.isLoggedIn = true; this.currentUser = {id:'admin', name:'Admin'};
+                        this.view = 'analysis';
+                    } else if (this.userMap[this.loginData.id]?.pin === this.loginData.pin) {
+                        this.isAdmin = false; this.isLoggedIn = true; 
+                        this.currentUser = {id:this.loginData.id, name:this.userMap[this.loginData.id].name};
+                        this.view = 'billing';
+                    } else { alert("WRONG PIN"); }
                 },
-                logout() { this.isLoggedIn = false; localStorage.removeItem('dairy_user'); },
-                adjust(id, c) { this.quantities[id] = Math.max(0, (this.quantities[id] || 0) + c); },
-                get cartTotal() {
-                    let t = 0;
-                    Object.values(this.products).flat().forEach(p => t += (p.price * (this.quantities[p.id] || 0)));
-                    return t.toFixed(2);
+
+                logout() { this.isLoggedIn = false; this.view = 'billing'; },
+
+                adjust(id, c) { 
+                    let cur = parseInt(this.quantities[id]) || 0;
+                    let st = this.productMap[id].stock || 0;
+                    if (c > 0 && cur >= st) return; 
+                    this.quantities[id] = Math.max(0, cur + c); 
                 },
-                get globalTotal() {
-                    return this.salesLog.reduce((s, n) => s + parseFloat(n.total), 0).toFixed(2);
-                },
-                async saveToCloud() {
-                    let items = [];
-                    Object.values(this.products).flat().forEach(p => {
-                        let q = this.quantities[p.id] || 0;
-                        if (q > 0) items.push(`${q}x ${p.name}`);
-                    });
-                    const sale = {
-                        id: Date.now(),
-                        timestamp: new Date().toLocaleString('en-IN'),
-                        dealer: this.dealerName,
-                        total: this.cartTotal,
-                        summary: items.join(', ')
+
+                // QR UPLOAD LOGIC
+                async uploadQR(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        const base64 = event.target.result;
+                        // For simplicity, we save base64 directly to Firebase. 
+                        // Note: For very large high-res images, external hosting like Cloudinary is better.
+                        await fetch(`${DATABASE_URL}/globalConfig.json`, { 
+                            method: 'PATCH', 
+                            body: JSON.stringify({ qrUrl: base64 }) 
+                        });
+                        this.qrImageUrl = base64;
+                        alert("QR Code Updated Successfully!");
                     };
-                    try {
-                        await fetch(`${DATABASE_URL}/sales.json`, { method: 'POST', body: JSON.stringify(sale) });
-                        this.quantities = {};
-                        this.fetchSales();
-                        alert('Sale Synced Successfully!');
-                    } catch (e) { alert('Sync Failed. Check internet.'); }
+                    reader.readAsDataURL(file);
                 },
-                async fetchSales() {
-                    try {
-                        const res = await fetch(`${DATABASE_URL}/sales.json`);
-                        const data = await res.json();
-                        this.salesLog = data ? Object.values(data).reverse() : [];
-                    } catch (e) { console.error("Fetch Error"); }
-                },
-                async clearCloud() {
-                    if(confirm("Admin: DELETE ALL CLOUD DATA?")) {
-                        await fetch(`${DATABASE_URL}/sales.json`, { method: 'DELETE' });
-                        this.fetchSales();
+
+                // PRODUCT ACTIONS
+                async addProduct() {
+                    if(!this.newP.name || !this.newP.price || !this.newP.category) return alert("Fill all fields");
+                    if(this.editingProductId) {
+                        await fetch(`${DATABASE_URL}/products/${this.editingProductId}.json`, { method: 'PATCH', body: JSON.stringify(this.newP) });
+                        this.editingProductId = null;
+                    } else {
+                        this.newP.order = this.products.length;
+                        await fetch(`${DATABASE_URL}/products.json`, { method: 'POST', body: JSON.stringify(this.newP) });
                     }
+                    this.newP = { name: '', price: '', category: '', order: 0, stock: 0 };
+                    await this.fetchAll();
+                },
+                editProduct(p) {
+                    this.editingProductId = p.id;
+                    this.newP = { name: p.name, price: p.price, category: p.category, order: p.order, stock: p.stock };
+                },
+                cancelEdit() {
+                    this.editingProductId = null;
+                    this.newP = { name: '', price: '', category: '', order: 0, stock: 0 };
+                },
+                async removeProduct(id) { if(confirm("Delete product?")) { await fetch(`${DATABASE_URL}/products/${id}.json`, { method: 'DELETE' }); await this.fetchAll(); } },
+                async moveProduct(index, dir) {
+                    let list = this.products; let target = index + dir;
+                    if (target < 0 || target >= list.length) return;
+                    let temp = list[index].order; list[index].order = list[target].order; list[target].order = temp;
+                    await Promise.all([
+                        fetch(`${DATABASE_URL}/products/${list[index].id}.json`, { method: 'PATCH', body: JSON.stringify({order: list[index].order}) }),
+                        fetch(`${DATABASE_URL}/products/${list[target].id}.json`, { method: 'PATCH', body: JSON.stringify({order: list[target].order}) })
+                    ]);
+                    await this.fetchAll();
+                },
+
+                // CATEGORY ACTIONS
+                async addCategory() {
+                    if(!this.newCatName) return;
+                    await fetch(`${DATABASE_URL}/categories.json`, { method: 'POST', body: JSON.stringify({ name: this.newCatName, order: this.sortedCategories.length }) });
+                    this.newCatName = ''; await this.fetchAll();
+                },
+                async deleteCategory(id) { if(confirm("Delete Category?")) { await fetch(`${DATABASE_URL}/categories/${id}.json`, { method: 'DELETE' }); await this.fetchAll(); } },
+                async moveCat(index, dir) {
+                    let list = this.sortedCategories; let target = index + dir;
+                    if (target < 0 || target >= list.length) return;
+                    let temp = list[index].order; list[index].order = list[target].order; list[target].order = temp;
+                    await Promise.all([
+                        fetch(`${DATABASE_URL}/categories/${list[index].id}.json`, { method: 'PATCH', body: JSON.stringify({order: list[index].order}) }),
+                        fetch(`${DATABASE_URL}/categories/${list[target].id}.json`, { method: 'PATCH', body: JSON.stringify({order: list[target].order}) })
+                    ]);
+                    await this.fetchAll();
+                },
+
+                // USER ACTIONS
+                async saveUser() { 
+                    if(!this.newUser.id) return;
+                    await fetch(`${DATABASE_URL}/users/${this.newUser.id}.json`, { method: 'PUT', body: JSON.stringify({ name: this.newUser.name, pin: this.newUser.pin }) });
+                    this.newUser = {id:'', name:'', pin:''}; await this.fetchAll();
+                },
+                async deleteUser(id) { await fetch(`${DATABASE_URL}/users/${id}.json`, { method: 'DELETE' }); await this.fetchAll(); },
+
+                // SHOP ACTIONS
+                async addShop() { 
+                    if(!this.newShopName) return;
+                    if(this.editingShopId) {
+                        await fetch(`${DATABASE_URL}/shops/${this.editingShopId}.json`, { method: 'PATCH', body: JSON.stringify({ name: this.newShopName }) });
+                        this.editingShopId = null;
+                    } else {
+                        await fetch(`${DATABASE_URL}/shops.json`, { method: 'POST', body: JSON.stringify({ name: this.newShopName }) });
+                    }
+                    this.newShopName = ''; await this.fetchAll();
+                },
+                editShop(id, shop) {
+                    this.editingShopId = id;
+                    this.newShopName = shop.name;
+                },
+                async deleteShop(id) { await fetch(`${DATABASE_URL}/shops/${id}.json`, { method: 'DELETE' }); await this.fetchAll(); },
+
+                // GLOBAL ACTIONS
+                async wipeSales() {
+                    if(confirm("DANGER: Are you sure you want to WIPE ALL sales history? This cannot be undone.")) {
+                        await fetch(`${DATABASE_URL}/sales.json`, { method: 'DELETE' });
+                        alert("Sales History Cleared");
+                        await this.fetchAll();
+                    }
+                },
+                async updateStock(id, val) {
+                    await fetch(`${DATABASE_URL}/products/${id}.json`, { method: 'PATCH', body: JSON.stringify({ stock: parseInt(val) || 0 }) });
+                    alert("Stock Saved"); await this.fetchAll();
+                },
+                async confirmSale(method) {
+                    let rows = []; let stockUpdates = [];
+                    this.products.forEach(p => { 
+                        let qty = parseInt(this.quantities[p.id]);
+                        if(qty > 0) {
+                            rows.push(`${p.name} (${qty}x${p.price})`);
+                            stockUpdates.push(fetch(`${DATABASE_URL}/products/${p.id}.json`, { method: 'PATCH', body: JSON.stringify({ stock: (p.stock || 0) - qty }) }));
+                        }
+                    });
+                    const sale = { timestamp: new Date().toLocaleString('en-IN'), userId: this.currentUser.id, dealer: this.currentUser.name, total: this.cartTotal, summary: rows.join('\n'), targetShop: this.selectedShop, payment: method };
+                    await Promise.all([...stockUpdates, fetch(`${DATABASE_URL}/sales.json`, { method: 'POST', body: JSON.stringify(sale) })]);
+                    this.currentBill = sale; this.showPaymentModal = false; this.showBill = true;
+                    this.quantities = {}; this.selectedShop = ''; await this.fetchAll();
+                },
+                shareWhatsApp() {
+                    const text = `*S.N.S AGENCY*\n*Shop:* ${this.currentBill.targetShop}\n*Payment:* ${this.currentBill.payment}\n*Total:* ₹${this.currentBill.total}\n\n${this.currentBill.summary}`;
+                    window.location.href = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
                 }
             }
         }
